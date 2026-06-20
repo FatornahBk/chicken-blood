@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, Search, ShieldCheck, X } from "lucide-react";
 import {
   approveUser,
@@ -14,38 +14,76 @@ const normalizeUsers = (data) => {
   return [];
 };
 
+const normalizeSummary = (data, users = []) => ({
+  pending: Number(data?.summary?.pending ?? users.length ?? 0),
+  approvedToday: Number(data?.summary?.approved_today ?? 0),
+  rejectedToday: Number(data?.summary?.rejected_today ?? 0),
+});
+
+const formatSubmittedDate = (value) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const submittedDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+  const daysAgo = Math.floor((today - submittedDay) / 86400000);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+
+  if (daysAgo === 0) return `Today, ${time}`;
+  if (daysAgo === 1) return `Yesterday, ${time}`;
+  if (daysAgo > 1 && daysAgo < 7) {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+    }).format(date);
+    return `${weekday}, ${time}`;
+  }
+
+  const dateLabel = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  }).format(date);
+
+  return `${dateLabel}, ${time}`;
+};
+
 
 
 function VerifyUser() {
   // state หลักของหน้า: ข้อมูล, คำค้นหา, loading, action ที่กำลังทำ, และ error
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [summary, setSummary] = useState({
+    pending: 0,
+    approvedToday: 0,
+    rejectedToday: 0,
+  });
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionUserId, setActionUserId] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [error, setError] = useState("");
 
-  // กรองข้อมูลในหน้าจอจาก search โดยไม่ต้องยิง API ใหม่ทุกครั้งที่พิมพ์
-  const filteredUsers = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    if (!keyword) return pendingUsers;
-
-    return pendingUsers.filter((user) => {
-      const fullName = `${user.first_name ?? ""} ${user.last_name ?? ""}`;
-      return [fullName, user.email, user.role, user.veterinary_license]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(keyword));
-    });
-  }, [pendingUsers, search]);
-
   // โหลดข้อมูลจาก API แล้วเก็บลง pendingUsers
-  const loadPendingUsers = async () => {
+  const loadPendingUsers = useCallback(async (email = "") => {
     setError("");
     setLoading(true);
 
     try {
-      const data = await getPendingUsers();
-      setPendingUsers(normalizeUsers(data));
+      const data = await getPendingUsers(email);
+      const users = normalizeUsers(data);
+      setPendingUsers(users);
+      setSummary(normalizeSummary(data, users));
     } catch (err) {
       setError(
         err.response?.data?.message ?? "ไม่สามารถดึงข้อมูลผู้ใช้ที่รออนุมัติได้"
@@ -53,12 +91,16 @@ function VerifyUser() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // useEffect ที่มี [] จะทำงานครั้งเดียวตอนเปิดหน้านี้
-  useEffect(() => {
-    loadPendingUsers();
   }, []);
+
+  // โหลดข้อมูลใหม่เมื่อค้นหาด้วยอีเมล โดยหน่วงเล็กน้อยเพื่อไม่ยิง API ทุกปุ่มที่กดทันที
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      loadPendingUsers(search);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadPendingUsers, search]);
 
   // ใช้ function เดียวกันสำหรับ approve/reject แล้วเลือก API จาก action
   const handleVerifyUser = async (userId, action) => {
@@ -72,22 +114,41 @@ function VerifyUser() {
         await rejectUser(userId);
       }
 
-      // ถ้าสำเร็จให้ลบ user คนนั้นออกจากตารางทันที ไม่ต้องรอ refresh หน้า
-      setPendingUsers((users) =>
-        users.filter((user) => user.user_id !== userId)
-      );
+      await loadPendingUsers(search);
     } catch (err) {
       setError(err.response?.data?.message ?? "ไม่สามารถอัปเดตสถานะผู้ใช้ได้");
     } finally {
       setActionUserId(null);
+      setConfirmAction(null);
     }
   };
+
+  const openConfirmModal = (user, action) => {
+    setConfirmAction({ user, action });
+  };
+
+  const closeConfirmModal = () => {
+    if (actionUserId) return;
+    setConfirmAction(null);
+  };
+
+  const confirmTitle =
+    confirmAction?.action === "approve"
+      ? "Confirm Approval"
+      : "Confirm Rejection";
+  const confirmMessage =
+    confirmAction?.action === "approve"
+      ? "Approve this user account and allow access to the platform?"
+      : "Reject this user verification request?";
+  const confirmButtonClass =
+    confirmAction?.action === "approve"
+      ? "bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-200"
+      : "bg-rose-500 hover:bg-rose-600 focus:ring-rose-200";
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600">Admin review</p>
           <h1 className="mt-1 text-3xl font-bold text-slate-950">
             Verify Users
           </h1>
@@ -96,42 +157,47 @@ function VerifyUser() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
-          <input
-            type="search"
-            placeholder="Search applicant"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
-        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Pending</p>
           <p className="mt-3 text-3xl font-bold text-amber-600">
-            {pendingUsers.length}
+            {summary.pending}
           </p>
         </article>
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Approved Today</p>
-          <p className="mt-3 text-3xl font-bold text-emerald-600">6</p>
+          <p className="mt-3 text-3xl font-bold text-emerald-600">
+            {summary.approvedToday}
+          </p>
         </article>
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Rejected Today</p>
-          <p className="mt-3 text-3xl font-bold text-rose-600">2</p>
+          <p className="mt-3 text-3xl font-bold text-rose-600">
+            {summary.rejectedToday}
+          </p>
         </article>
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-5">
+        <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-blue-600" aria-hidden="true" />
+            <ShieldCheck className="h-5 w-5 text-blue-600" />
             <h2 className="text-lg font-bold text-slate-950">
               Waiting for Approval
             </h2>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input
+              type="search"
+              placeholder="Search By Email"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            />
           </div>
         </div>
 
@@ -170,7 +236,7 @@ function VerifyUser() {
                 </tr>
               )}
 
-              {!loading && !error && filteredUsers.length === 0 && (
+              {!loading && !error && pendingUsers.length === 0 && (
                 <tr>
                   <td
                     colSpan="6"
@@ -181,7 +247,7 @@ function VerifyUser() {
                 </tr>
               )}
 
-              {!loading && !error && filteredUsers.map((user) => (
+              {!loading && !error && pendingUsers.map((user) => (
                 <tr key={user.user_id}>
                   <td className="px-6 py-4 text-slate-700">{user.user_id}</td>
                   <td className="px-6 py-4">
@@ -193,25 +259,27 @@ function VerifyUser() {
                     {user.veterinary_license}
                   </td>
                   <td className="px-6 py-4 text-slate-500">
-                    {user.created_at}
+                    {formatSubmittedDate(user.created_at)}
                   </td>
                   <td className="px-3 py-4">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         disabled={actionUserId === user.user_id}
-                        onClick={() => handleVerifyUser(user.user_id, "approve")}
+                        onClick={() => openConfirmModal(user, "approve")}
                         className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Approve ${user.first_name} ${user.last_name}`}
                       >
-                        <Check className="h-4 w-4" aria-hidden="true" />
+                        <Check className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
                         disabled={actionUserId === user.user_id}
-                        onClick={() => handleVerifyUser(user.user_id, "reject")}
+                        onClick={() => openConfirmModal(user, "reject")}
                         className="rounded-lg bg-rose-500 p-2 text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Reject ${user.first_name} ${user.last_name}`}
                       >
-                        <X className="h-4 w-4" aria-hidden="true" />
+                        <X className="h-4 w-4" />
                       </button>
                     </div>
                   </td>
@@ -221,6 +289,84 @@ function VerifyUser() {
           </table>
         </div>
       </section>
+
+      {confirmAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4"
+          role="presentation"
+          onMouseDown={closeConfirmModal}
+        >
+          <div
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verify-confirm-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                  confirmAction.action === "approve"
+                    ? "bg-emerald-100 text-emerald-600"
+                    : "bg-rose-100 text-rose-600"
+                }`}
+              >
+                {confirmAction.action === "approve" ? (
+                  <Check className="h-5 w-5" />
+                ) : (
+                  <X className="h-5 w-5" />
+                )}
+              </div>
+              <h3
+                id="verify-confirm-title"
+                className="text-lg font-bold text-slate-950"
+              >
+                {confirmTitle}
+              </h3>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm text-slate-500">
+                {confirmMessage}
+              </p>
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="font-semibold text-slate-950">
+                  {confirmAction.user.first_name} {confirmAction.user.last_name}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {confirmAction.user.email}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                disabled={actionUserId === confirmAction.user.user_id}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleVerifyUser(
+                    confirmAction.user.user_id,
+                    confirmAction.action
+                  )
+                }
+                disabled={actionUserId === confirmAction.user.user_id}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-50 ${confirmButtonClass}`}
+              >
+                {actionUserId === confirmAction.user.user_id
+                  ? "Processing..."
+                  : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

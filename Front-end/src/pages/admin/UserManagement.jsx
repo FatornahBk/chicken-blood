@@ -130,12 +130,12 @@ function AdminUserManagement() {
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-blue-600"/>
+            <Users className="h-5 w-5 text-blue-600" aria-hidden="true"/>
             <h2 className="text-xl font-bold text-slate-950">All Users</h2>
           </div>
 
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <Search className="h-4 w-4 text-slate-400" />
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
             <input
               type="search"
               placeholder="Search user"
@@ -195,10 +195,10 @@ function AdminUserManagement() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <button className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900">
-                          <Edit3 className="h-4 w-4" />
+                          <Edit3 className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <button className="rounded-lg border border-rose-200 p-2 text-rose-500 transition-colors hover:bg-rose-50">
-                          <Ban className="h-4 w-4" />
+                          <Ban className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                     </td>

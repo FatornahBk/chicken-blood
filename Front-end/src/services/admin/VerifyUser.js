@@ -12,8 +12,15 @@ const authConfig = () => {
 };
 
 // ดึงรายชื่อผู้ใช้ที่ยังรอ Admin อนุมัติ
-export const getPendingUsers = async () => {
-  const response = await loginClient.get("/user/admin/pending", authConfig());
+export const getPendingUsers = async (email = "") => {
+  const config = authConfig();
+  const keyword = email.trim();
+
+  if (keyword) {
+    config.params = { email: keyword };
+  }
+
+  const response = await loginClient.get("/user/admin/pending", config);
   return response.data;
 };
 
