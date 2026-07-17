@@ -7,10 +7,10 @@ export const predictClient = axios.create({
 
 //api register
 export const registerClient = axios.create({
-  baseURL: 'https://preventing-staffing-path-acid.trycloudflare.com', 
+  baseURL: 'http://localhost/api', 
 });
 
 //// api login
 export const loginClient = axios.create({
-  baseURL: 'https://preventing-staffing-path-acid.trycloudflare.com',
+  baseURL: 'http://localhost/api',
 });

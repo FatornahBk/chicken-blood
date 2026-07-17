@@ -1,11 +1,13 @@
 import { useState } from "react";
 import Navbar from "../components/navbar";
 import Footer from "../components/footer";
+import { formatAdminDate } from "../utils/adminDate";
 
 const mockSamples = [
   // ── Wright Stain ──
   {
     id: "EW-2541",
+    created_at: "2026-06-21T09:15:00.000Z",
     stainType: "wright",
     chickenType: "Laying hen",
     age: "6 months",
@@ -16,6 +18,7 @@ const mockSamples = [
   },
   {
     id: "EW-2874",
+    created_at: "2026-06-20T14:40:00.000Z",
     stainType: "wright",
     chickenType: "Broiler",
     age: "3 months",
@@ -28,6 +31,7 @@ const mockSamples = [
   // ── Giemsa Stain ──
   {
     id: "EG-3001",
+    created_at: "2026-06-18T08:25:00.000Z",
     stainType: "giemsa",
     chickenType: "Broiler",
     age: "4 months",
@@ -38,6 +42,7 @@ const mockSamples = [
   },
   {
     id: "EG-3002",
+    created_at: "2026-05-26T16:04:00.000Z",
     stainType: "giemsa",
     chickenType: "Laying hen",
     age: "8 months",
@@ -86,6 +91,7 @@ function ImageCard({ image, onToggle }) {
 function SampleCard({ sample, onToggleImage, onSelectAll }) {
   const allSelected = sample.images.every((img) => img.selected);
   const selectedCount = sample.images.filter((img) => img.selected).length;
+  const sampleDate = sample.created_at ?? sample.createdAt ?? sample.submittedAt;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
@@ -115,6 +121,9 @@ function SampleCard({ sample, onToggleImage, onSelectAll }) {
               <span className="text-gray-500">{sample.age}</span>
             </p>
             <p className="text-xs text-gray-400 pt-2">Province : {sample.province}</p>
+            <p className="text-xs text-gray-400">
+              Date : {formatAdminDate(sampleDate)}
+            </p>
           </div>
         </div>
 

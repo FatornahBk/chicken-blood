@@ -7,7 +7,6 @@ import Upload from "./pages/Upload";
 import Prediction from "./pages/Prediction";
 import Profile from "./pages/Profile"; // ✅ เพิ่มตรงนี้
 
-
 import AdminLayout from "./layouts/AdminLayout";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUserManagement from "./pages/admin/UserManagement";
@@ -27,13 +26,48 @@ function App() {
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-        <Route path="/upload" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
-        <Route path="/prediction" element={<ProtectedRoute><Prediction /></ProtectedRoute>} />
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <Upload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/prediction"
+          element={
+            <ProtectedRoute>
+              <Prediction />
+            </ProtectedRoute>
+          }
+        />
         {/* ✅ เพิ่ม route นี้ */}
-        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-        
-        <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<AdminDashboard />} />
           <Route path="users-management" element={<AdminUserManagement />} />
           <Route path="verify-users" element={<AdminVerifyUser />} />

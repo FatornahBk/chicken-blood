@@ -5,6 +5,7 @@ import {
   getPendingUsers,
   rejectUser,
 } from "../../services/admin/VerifyUser";
+import { formatAdminDate } from "../../utils/adminDate";
 
 // แปลง response จาก API ให้เป็น array เสมอ เพราะแต่ละ backend อาจส่งรูปแบบไม่เหมือนกัน
 const normalizeUsers = (data) => {
@@ -14,51 +15,21 @@ const normalizeUsers = (data) => {
   return [];
 };
 
+const isActivePendingUser = (user) => {
+  const isActive = user.is_active !== false && Number(user.is_active) !== 0;
+  const isPending =
+    user.is_verified === undefined ||
+    user.is_verified === null ||
+    Number(user.is_verified) === 0;
+
+  return isActive && isPending;
+};
+
 const normalizeSummary = (data, users = []) => ({
-  pending: Number(data?.summary?.pending ?? users.length ?? 0),
+  pending: users.length,
   approvedToday: Number(data?.summary?.approved_today ?? 0),
   rejectedToday: Number(data?.summary?.rejected_today ?? 0),
 });
-
-const formatSubmittedDate = (value) => {
-  if (!value) return "-";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const submittedDay = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-  const daysAgo = Math.floor((today - submittedDay) / 86400000);
-  const time = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-
-  if (daysAgo === 0) return `Today, ${time}`;
-  if (daysAgo === 1) return `Yesterday, ${time}`;
-  if (daysAgo > 1 && daysAgo < 7) {
-    const weekday = new Intl.DateTimeFormat("en-US", {
-      weekday: "long",
-    }).format(date);
-    return `${weekday}, ${time}`;
-  }
-
-  const dateLabel = new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
-  }).format(date);
-
-  return `${dateLabel}, ${time}`;
-};
-
-
 
 function VerifyUser() {
   // state หลักของหน้า: ข้อมูล, คำค้นหา, loading, action ที่กำลังทำ, และ error
@@ -81,12 +52,13 @@ function VerifyUser() {
 
     try {
       const data = await getPendingUsers(email);
-      const users = normalizeUsers(data);
+      const users = normalizeUsers(data).filter(isActivePendingUser);
       setPendingUsers(users);
       setSummary(normalizeSummary(data, users));
     } catch (err) {
       setError(
-        err.response?.data?.message ?? "ไม่สามารถดึงข้อมูลผู้ใช้ที่รออนุมัติได้"
+        err.response?.data?.message ??
+          "ไม่สามารถดึงข้อมูลผู้ใช้ที่รออนุมัติได้",
       );
     } finally {
       setLoading(false);
@@ -156,24 +128,23 @@ function VerifyUser() {
             Review veterinary licenses and approve trusted users.
           </p>
         </div>
-
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Pending</p>
+          <p className="text-lg font-medium text-slate-500">Pending</p>
           <p className="mt-3 text-3xl font-bold text-amber-600">
             {summary.pending}
           </p>
         </article>
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Approved Today</p>
+          <p className="text-lg font-medium text-slate-500">Approved Today</p>
           <p className="mt-3 text-3xl font-bold text-emerald-600">
             {summary.approvedToday}
           </p>
         </article>
         <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Rejected Today</p>
+          <p className="text-lg font-medium text-slate-500">Rejected Today</p>
           <p className="mt-3 text-3xl font-bold text-rose-600">
             {summary.rejectedToday}
           </p>
@@ -247,44 +218,50 @@ function VerifyUser() {
                 </tr>
               )}
 
-              {!loading && !error && pendingUsers.map((user) => (
-                <tr key={user.user_id}>
-                  <td className="px-6 py-4 text-slate-700">{user.user_id}</td>
-                  <td className="px-6 py-4">
-                    <p className="font-semibold text-slate-950">{user.first_name} {user.last_name}</p>
-                    <p className="mt-1 text-xs text-slate-500">{user.email}</p>
-                  </td>
-                  <td className="px-6 py-4 text-slate-700">{user.role}</td>
-                  <td className="px-6 py-4 font-medium text-slate-800">
-                    {user.veterinary_license}
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {formatSubmittedDate(user.created_at)}
-                  </td>
-                  <td className="px-3 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={actionUserId === user.user_id}
-                        onClick={() => openConfirmModal(user, "approve")}
-                        className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label={`Approve ${user.first_name} ${user.last_name}`}
-                      >
-                        <Check className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actionUserId === user.user_id}
-                        onClick={() => openConfirmModal(user, "reject")}
-                        className="rounded-lg bg-rose-500 p-2 text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label={`Reject ${user.first_name} ${user.last_name}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {!loading &&
+                !error &&
+                pendingUsers.map((user) => (
+                  <tr key={user.user_id}>
+                    <td className="px-6 py-4 text-slate-700">{user.user_id}</td>
+                    <td className="px-6 py-4">
+                      <p className="font-semibold text-slate-950">
+                        {user.first_name} {user.last_name}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {user.email}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4 text-slate-700">{user.role}</td>
+                    <td className="px-6 py-4 font-medium text-slate-800">
+                      {user.veterinary_license}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500">
+                      {formatAdminDate(user.created_at)}
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={actionUserId === user.user_id}
+                          onClick={() => openConfirmModal(user, "approve")}
+                          className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Approve ${user.first_name} ${user.last_name}`}
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={actionUserId === user.user_id}
+                          onClick={() => openConfirmModal(user, "reject")}
+                          className="rounded-lg bg-rose-500 p-2 text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Reject ${user.first_name} ${user.last_name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -326,9 +303,7 @@ function VerifyUser() {
             </div>
 
             <div className="mt-4">
-              <p className="text-sm text-slate-500">
-                {confirmMessage}
-              </p>
+              <p className="text-sm text-slate-500">{confirmMessage}</p>
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="font-semibold text-slate-950">
                   {confirmAction.user.first_name} {confirmAction.user.last_name}
@@ -353,7 +328,7 @@ function VerifyUser() {
                 onClick={() =>
                   handleVerifyUser(
                     confirmAction.user.user_id,
-                    confirmAction.action
+                    confirmAction.action,
                   )
                 }
                 disabled={actionUserId === confirmAction.user.user_id}

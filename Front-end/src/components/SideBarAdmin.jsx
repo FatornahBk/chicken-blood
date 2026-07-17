@@ -1,12 +1,5 @@
 import { NavLink } from "react-router-dom";
-import {
-  Database,
-  LayoutDashboard,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
-import logo from "../assets/Chicken-CBC.png";
-
+import { Database, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
 const ADMIN_SIDEBAR_OPTIONS = [
   {
     label: "Dashboard",
@@ -34,7 +27,6 @@ const SideBarAdmin = ({ options = ADMIN_SIDEBAR_OPTIONS }) => {
   return (
     <aside className="flex h-screen w-72 flex-col border-r border-slate-200 bg-white">
       <div className="flex h-20 items-center gap-3 border-b border-slate-100 px-6">
-        
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-slate-900">
             Admin Panel
