@@ -11,29 +11,6 @@ import {
 import { getDashboardUsers } from "../../services/admin/Dashboard";
 import { formatAdminDate } from "../../utils/adminDate";
 
-const normalizeUsers = (data) => {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.users)) return data.users;
-  if (Array.isArray(data?.data)) return data.data;
-  return [];
-};
-
-const verificationValue = (user) =>
-  user.is_verified ?? user.is_verfy ?? user.is_verify;
-
-const isVerified = (user) => {
-  const value = verificationValue(user);
-  return value === true || value === "true" || Number(value) === 1;
-};
-
-const isPending = (user) => {
-  const value = verificationValue(user);
-  const isActive = user.is_active !== false && Number(user.is_active) !== 0;
-  return (
-    isActive && (value === undefined || value === null || Number(value) === 0)
-  );
-};
-
 const submittedAt = (user) =>
   user.created_at ?? user.createdAt ?? user.submitted_at ?? user.submittedAt;
 
@@ -67,11 +44,6 @@ const statCards = [
     "bg-violet-50",
   ],
 ];
-
-const predictionStatuses = {
-  completed: 15,
-  pending: 15,
-};
 
 function PredictionStatusChart({ completed, pending }) {
   const completedPercent = Math.min(Math.max(Number(completed) || 0, 0), 100);
@@ -118,8 +90,12 @@ function AdminDashboard() {
   const [stats, setStats] = useState({
     totalUsers: 0,
     pendingVerification: 0,
-    predictionJobs: "426",
-    datasetImages: "9,732",
+    predictionJobs: 0,
+    datasetImages: 0,
+  });
+  const [predictionStatuses, setPredictionStatuses] = useState({
+    completed: 0,
+    pending: 0,
   });
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,17 +105,28 @@ function AdminDashboard() {
     let mounted = true;
     (async () => {
       try {
-        const data = await getDashboardUsers();
-        const allUsers = normalizeUsers(data.allUsers);
-        const pendingUsers = normalizeUsers(data.pendingUsers).filter(
-          isPending,
-        );
+        const data = await getDashboardUsers({ page: 1, limit: 3 });
+        const userStatistics = data.user_statistics ?? {};
+        const predictionStatistics = data.prediction_statistics ?? {};
+        const bloodInsights = data.avian_blood_insights ?? {};
+        const pendingUsers = data.pending_users_table?.data ?? [];
         if (!mounted) return;
-        setStats((current) => ({
-          ...current,
-          totalUsers: allUsers.filter(isVerified).length,
-          pendingVerification: pendingUsers.length,
-        }));
+        setStats({
+          totalUsers: Number(userStatistics.total_users ?? 0),
+          pendingVerification: Number(
+            userStatistics.unverified_users ??
+              data.pending_users_table?.meta?.total_items ??
+              0,
+          ),
+          predictionJobs: Number(bloodInsights.total_batches ?? 0),
+          datasetImages: Number(predictionStatistics.total_images ?? 0),
+        });
+        setPredictionStatuses({
+          completed: Number(
+            predictionStatistics.completed_percentage ?? 0,
+          ),
+          pending: Number(predictionStatistics.pending_percentage ?? 0),
+        });
         setQueue(
           [...pendingUsers]
             .sort((a, b) => new Date(submittedAt(b)) - new Date(submittedAt(a)))

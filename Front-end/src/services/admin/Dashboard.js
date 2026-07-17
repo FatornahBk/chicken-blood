@@ -1,14 +1,20 @@
-import { getAllUsers } from "./UserManagement";
-import { getPendingUsers } from "./VerifyUser";
+import { loginClient } from "../api";
 
-export const getDashboardUsers = async () => {
-  const [allUsers, pendingUsers] = await Promise.all([
-    getAllUsers(),
-    getPendingUsers(),
-  ]);
+const authConfig = () => {
+  const token = localStorage.getItem("access_token");
 
   return {
-    allUsers,
-    pendingUsers,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   };
+};
+
+export const getDashboardUsers = async ({ page = 1, limit = 3 } = {}) => {
+  const response = await loginClient.get("/user/admin/dashboard", {
+    ...authConfig(),
+    params: { page, limit },
+  });
+
+  return response.data;
 };
