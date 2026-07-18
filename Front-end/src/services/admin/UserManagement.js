@@ -16,12 +16,21 @@ const authConfig = (params = {}) => {
   };
 };
 
-export const getAllUsers = async ({ role = "", email = "" } = {}) => {
+export const getAllUsers = async ({
+  role = "",
+  email = "",
+  status = "",
+  page = 1,
+  limit = 10,
+} = {}) => {
   const response = await loginClient.get(
     "/user/admin/all",
     authConfig({
       role: role.trim(),
       email: email.trim(),
+      status,
+      page,
+      limit,
     }),
   );
   return response.data;
@@ -36,10 +45,19 @@ export const updateUserRole = async (userId, role) => {
   return response.data;
 };
 
-export const suspendUser = async (userId, payload = {}) => {
+export const suspendUser = async (userId) => {
   const response = await loginClient.patch(
     `/user/admin/suspend/${userId}`,
-    payload,
+    {},
+    authConfig(),
+  );
+  return response.data;
+};
+
+export const activateUser = async (userId) => {
+  const response = await loginClient.patch(
+    `/user/admin/activate/${userId}`,
+    {},
     authConfig(),
   );
   return response.data;

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Edit3, Search, Users } from "lucide-react";
 import {
+  Ban,
+  ChevronLeft,
+  ChevronRight,
+  Edit3,
+  RotateCcw,
+  Search,
+  Users,
+} from "lucide-react";
+import {
+  activateUser,
   getAllUsers,
   suspendUser,
   updateUserRole,
@@ -37,24 +46,6 @@ const getInitials = (name = "") => {
   return clean.slice(0, 2).toUpperCase();
 };
 
-const getVerificationValue = (user) => {
-  return user.is_verified ?? user.is_verfy ?? user.is_verify;
-};
-
-const isUserVerified = (user) => {
-  const value = getVerificationValue(user);
-  return value === true || value === "true" || Number(value) === 1;
-};
-
-const isUserRejected = (user) => {
-  return Number(getVerificationValue(user)) === 2;
-};
-
-const isUserPending = (user) => {
-  const value = getVerificationValue(user);
-  return value === undefined || value === null || Number(value) === 0;
-};
-
 const isUserActive = (user) => {
   return (
     user.is_active === true ||
@@ -64,10 +55,7 @@ const isUserActive = (user) => {
 };
 
 const isUserSuspended = (user) => {
-  return (
-    Number(getVerificationValue(user)) === 2 ||
-    (isUserVerified(user) && !isUserActive(user))
-  );
+  return !isUserActive(user);
 };
 
 const getAccountStatus = (user) => {
@@ -78,22 +66,8 @@ const getAccountStatus = (user) => {
     };
   }
 
-  if (isUserPending(user)) {
-    return {
-      label: "Pending",
-      className: "text-amber-600 bg-amber-100",
-    };
-  }
-
-  if (isUserRejected(user)) {
-    return {
-      label: "Rejected",
-      className: "text-slate-600 bg-slate-100",
-    };
-  }
-
   return {
-    label: "Verified",
+    label: "Active",
     className: "text-green-600 bg-green-100",
   };
 };
@@ -105,36 +79,77 @@ function AdminUserManagement() {
   const [apiSummary, setApiSummary] = useState(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [meta, setMeta] = useState({
+    total_items: 0,
+    current_page: 1,
+    per_page: 10,
+    total_pages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionUserId, setActionUserId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
 
   const loadUsers = useCallback(
-    async ({ email = search, role = roleFilter } = {}) => {
+    async ({
+      email = search,
+      role = roleFilter,
+      status = statusFilter,
+      currentPage = page,
+    } = {}) => {
       setError("");
       setLoading(true);
 
       try {
-        const data = await getAllUsers({ email, role });
+        const data = await getAllUsers({
+          email,
+          role,
+          status,
+          page: currentPage,
+          limit,
+        });
         setUsers(normalizeUsers(data));
         setApiSummary(normalizeSummary(data));
+        setMeta((current) => ({ ...current, ...data?.meta }));
       } catch (err) {
         setError(err.response?.data?.message ?? "ไม่สามารถดึงข้อมูลผู้ใช้ได้");
       } finally {
         setLoading(false);
       }
     },
-    [roleFilter, search],
+    [limit, page, roleFilter, search, statusFilter],
   );
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      loadUsers({ email: search, role: roleFilter });
+      loadUsers({
+        email: search,
+        role: roleFilter,
+        status: statusFilter,
+        currentPage: page,
+      });
     }, 300);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loadUsers, roleFilter, search]);
+  }, [loadUsers, page, roleFilter, search, statusFilter]);
+
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+
+  const handleRoleFilterChange = (value) => {
+    setRoleFilter(value);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
 
   const summary = useMemo(() => {
     const computedSummary = {
@@ -152,7 +167,7 @@ function AdminUserManagement() {
 
     try {
       await updateUserRole(userId, role);
-      await loadUsers({ email: search, role: roleFilter });
+      await loadUsers();
     } catch (err) {
       setError(err.response?.data?.message ?? "ไม่สามารถแก้ไข Role ได้");
     } finally {
@@ -165,20 +180,26 @@ function AdminUserManagement() {
     setError("");
     setActionUserId(user.user_id);
 
-    const verificationValue = getVerificationValue(user);
-    const nextVerificationValue = isUserVerified(user)
-      ? 1
-      : Number(verificationValue ?? 0);
-
     try {
-      await suspendUser(user.user_id, {
-        is_active: false,
-        is_verified: nextVerificationValue,
-        is_verfy: nextVerificationValue,
-      });
-      await loadUsers({ email: search, role: roleFilter });
+      await suspendUser(user.user_id);
+      await loadUsers();
     } catch (err) {
       setError(err.response?.data?.message ?? "ไม่สามารถระงับบัญชีผู้ใช้ได้");
+    } finally {
+      setActionUserId(null);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleActivateUser = async (user) => {
+    setError("");
+    setActionUserId(user.user_id);
+
+    try {
+      await activateUser(user.user_id);
+      await loadUsers();
+    } catch (err) {
+      setError(err.response?.data?.message ?? "ไม่สามารถเปิดใช้งานบัญชีได้");
     } finally {
       setActionUserId(null);
       setConfirmAction(null);
@@ -198,16 +219,28 @@ function AdminUserManagement() {
     setConfirmAction({ type: "suspend", user });
   };
 
+  const openActivateModal = (user) => {
+    setConfirmAction({ type: "activate", user });
+  };
+
   const confirmTitle =
-    confirmAction?.type === "role" ? "Change User Role" : "Suspend Account";
+    confirmAction?.type === "role"
+      ? "Change User Role"
+      : confirmAction?.type === "activate"
+        ? "Reactivate Account"
+        : "Suspend Account";
   const confirmMessage =
     confirmAction?.type === "role"
       ? "Select the role you want to assign to this user."
-      : "Suspend this user account?";
+      : confirmAction?.type === "activate"
+        ? "Reactivate this user account?"
+        : "Suspend this user account?";
   const confirmButtonClass =
     confirmAction?.type === "role"
       ? "bg-blue-600 hover:bg-blue-700 focus:ring-blue-200"
-      : "bg-rose-500 hover:bg-rose-600 focus:ring-rose-200";
+      : confirmAction?.type === "activate"
+        ? "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-200"
+        : "bg-rose-500 hover:bg-rose-600 focus:ring-rose-200";
 
   return (
     <section className="space-y-6">
@@ -253,7 +286,7 @@ function AdminUserManagement() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <select
               value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value)}
+              onChange={(event) => handleRoleFilterChange(event.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
               aria-label="Filter by role"
             >
@@ -262,13 +295,26 @@ function AdminUserManagement() {
               <option value="user">User</option>
             </select>
 
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                handleStatusFilterChange(event.target.value)
+              }
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+              aria-label="Filter by account status"
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="suspend">Suspended</option>
+            </select>
+
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
               <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
               <input
                 type="search"
                 placeholder="Search by email"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
             </div>
@@ -370,27 +416,50 @@ function AdminUserManagement() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          {!isSuspended && (
+                            <button
+                              type="button"
+                              disabled={actionUserId === user.user_id}
+                              onClick={() => openRoleModal(user)}
+                              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Change role for ${fullName}`}
+                            >
+                              <Edit3 className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             disabled={actionUserId === user.user_id}
-                            onClick={() => openRoleModal(user)}
-                            className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                            aria-label={`Change role for ${fullName}`}
-                          >
-                            <Edit3 className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              actionUserId === user.user_id ||
-                              isSuspended ||
-                              !isUserVerified(user)
+                            onClick={() =>
+                              isSuspended
+                                ? openActivateModal(user)
+                                : openSuspendModal(user)
                             }
-                            onClick={() => openSuspendModal(user)}
-                            className="rounded-lg border border-rose-200 p-2 text-rose-500 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            aria-label={`Suspend ${fullName}`}
+                            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              isSuspended
+                                ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                                : "border-rose-200 text-rose-500 hover:bg-rose-50"
+                            }`}
+                            aria-label={
+                              isSuspended
+                                ? `Reactivate ${fullName}`
+                                : `Suspend ${fullName}`
+                            }
                           >
-                            <Ban className="h-4 w-4" aria-hidden="true" />
+                            {isSuspended ? (
+                              <>
+                                <RotateCcw
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
+                                Reactivate
+                              </>
+                            ) : (
+                              <>
+                                <Ban className="h-4 w-4" aria-hidden="true" />
+                                Suspend
+                              </>
+                            )}
                           </button>
                         </div>
                       </td>
@@ -400,6 +469,39 @@ function AdminUserManagement() {
             </tbody>
           </table>
         </div>
+
+        {!loading && !error && meta.total_pages > 0 && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
+              Page {meta.current_page} of {meta.total_pages} ·{" "}
+              {meta.total_items} users
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) =>
+                    Math.min(meta.total_pages, current + 1),
+                  )
+                }
+                disabled={page >= meta.total_pages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {confirmAction && (
@@ -420,11 +522,15 @@ function AdminUserManagement() {
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                   confirmAction.type === "role"
                     ? "bg-blue-100 text-blue-600"
-                    : "bg-rose-100 text-rose-600"
+                    : confirmAction.type === "activate"
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-rose-100 text-rose-600"
                 }`}
               >
                 {confirmAction.type === "role" ? (
                   <Edit3 className="h-5 w-5" />
+                ) : confirmAction.type === "activate" ? (
+                  <RotateCcw className="h-5 w-5" />
                 ) : (
                   <Ban className="h-5 w-5" />
                 )}
@@ -496,6 +602,8 @@ function AdminUserManagement() {
                         confirmAction.user.user_id,
                         confirmAction.nextRole,
                       )
+                    : confirmAction.type === "activate"
+                      ? handleActivateUser(confirmAction.user)
                     : handleSuspendUser(confirmAction.user)
                 }
                 disabled={actionUserId === confirmAction.user.user_id}
@@ -503,7 +611,9 @@ function AdminUserManagement() {
               >
                 {actionUserId === confirmAction.user.user_id
                   ? "Processing..."
-                  : "Confirm"}
+                  : confirmAction.type === "activate"
+                    ? "Reactivate"
+                    : "Confirm"}
               </button>
             </div>
           </div>
