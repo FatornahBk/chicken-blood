@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Search, ShieldCheck, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import {
   approveUser,
   getPendingUsers,
   rejectUser,
+  undoRejectUser,
 } from "../../services/admin/VerifyUser";
 import { formatAdminDate } from "../../utils/adminDate";
 
@@ -15,23 +24,14 @@ const normalizeUsers = (data) => {
   return [];
 };
 
-const isActivePendingUser = (user) => {
-  const isActive = user.is_active !== false && Number(user.is_active) !== 0;
-  const isPending =
-    user.is_verified === undefined ||
-    user.is_verified === null ||
-    Number(user.is_verified) === 0;
-
-  return isActive && isPending;
-};
-
 const normalizeSummary = (data, users = []) => ({
-  pending: users.length,
+  pending: Number(data?.summary?.pending ?? users.length),
   approvedToday: Number(data?.summary?.approved_today ?? 0),
   rejectedToday: Number(data?.summary?.rejected_today ?? 0),
 });
 
 function VerifyUser() {
+  const pageSize = 10;
   // state หลักของหน้า: ข้อมูล, คำค้นหา, loading, action ที่กำลังทำ, และ error
   const [pendingUsers, setPendingUsers] = useState([]);
   const [summary, setSummary] = useState({
@@ -40,21 +40,40 @@ function VerifyUser() {
     rejectedToday: 0,
   });
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("pending");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    totalItems: 0,
+    currentPage: 1,
+    totalPages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [actionUserId, setActionUserId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [error, setError] = useState("");
 
   // โหลดข้อมูลจาก API แล้วเก็บลง pendingUsers
-  const loadPendingUsers = useCallback(async (email = "") => {
+  const loadPendingUsers = useCallback(async () => {
     setError("");
     setLoading(true);
 
     try {
-      const data = await getPendingUsers(email);
-      const users = normalizeUsers(data).filter(isActivePendingUser);
+      const data = await getPendingUsers({
+        email: search,
+        status,
+        page,
+        limit: pageSize,
+      });
+      const users = normalizeUsers(data).sort(
+        (first, second) => Number(first.user_id) - Number(second.user_id),
+      );
       setPendingUsers(users);
       setSummary(normalizeSummary(data, users));
+      setPagination({
+        totalItems: Number(data?.meta?.total_items ?? users.length),
+        currentPage: Number(data?.meta?.current_page ?? page),
+        totalPages: Math.max(Number(data?.meta?.total_pages ?? 1), 1),
+      });
     } catch (err) {
       setError(
         err.response?.data?.message ??
@@ -63,16 +82,26 @@ function VerifyUser() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search, status]);
 
   // โหลดข้อมูลใหม่เมื่อค้นหาด้วยอีเมล โดยหน่วงเล็กน้อยเพื่อไม่ยิง API ทุกปุ่มที่กดทันที
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      loadPendingUsers(search);
+      loadPendingUsers();
     }, 300);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loadPendingUsers, search]);
+  }, [loadPendingUsers]);
+
+  const handleSearchChange = (event) => {
+    setSearch(event.target.value);
+    setPage(1);
+  };
+
+  const handleStatusChange = (event) => {
+    setStatus(event.target.value);
+    setPage(1);
+  };
 
   // ใช้ function เดียวกันสำหรับ approve/reject แล้วเลือก API จาก action
   const handleVerifyUser = async (userId, action) => {
@@ -82,11 +111,13 @@ function VerifyUser() {
     try {
       if (action === "approve") {
         await approveUser(userId);
+      } else if (action === "restore") {
+        await undoRejectUser(userId);
       } else {
         await rejectUser(userId);
       }
 
-      await loadPendingUsers(search);
+      await loadPendingUsers();
     } catch (err) {
       setError(err.response?.data?.message ?? "ไม่สามารถอัปเดตสถานะผู้ใช้ได้");
     } finally {
@@ -107,14 +138,20 @@ function VerifyUser() {
   const confirmTitle =
     confirmAction?.action === "approve"
       ? "Confirm Approval"
+      : confirmAction?.action === "restore"
+        ? "Restore to Pending"
       : "Confirm Rejection";
   const confirmMessage =
     confirmAction?.action === "approve"
       ? "Approve this user account and allow access to the platform?"
+      : confirmAction?.action === "restore"
+        ? "Restore this rejected user to the pending verification list?"
       : "Reject this user verification request?";
   const confirmButtonClass =
     confirmAction?.action === "approve"
       ? "bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-200"
+      : confirmAction?.action === "restore"
+        ? "bg-blue-500 hover:bg-blue-600 focus:ring-blue-200"
       : "bg-rose-500 hover:bg-rose-600 focus:ring-rose-200";
 
   return (
@@ -160,15 +197,27 @@ function VerifyUser() {
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              type="search"
-              placeholder="Search By Email"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
-            />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={status}
+              onChange={handleStatusChange}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-blue-400"
+              aria-label="Filter by verification status"
+            >
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="reject">Rejected</option>
+            </select>
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                type="search"
+                placeholder="Search By Email"
+                value={search}
+                onChange={handleSearchChange}
+                className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
+            </div>
           </div>
         </div>
 
@@ -240,24 +289,38 @@ function VerifyUser() {
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={actionUserId === user.user_id}
-                          onClick={() => openConfirmModal(user, "approve")}
-                          className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          aria-label={`Approve ${user.first_name} ${user.last_name}`}
-                        >
-                          <Check className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={actionUserId === user.user_id}
-                          onClick={() => openConfirmModal(user, "reject")}
-                          className="rounded-lg bg-rose-500 p-2 text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          aria-label={`Reject ${user.first_name} ${user.last_name}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        {Number(user.is_verified) === 2 ? (
+                          <button
+                            type="button"
+                            disabled={actionUserId === user.user_id}
+                            onClick={() => openConfirmModal(user, "restore")}
+                            className="flex items-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Restore to Pending
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              disabled={actionUserId === user.user_id}
+                              onClick={() => openConfirmModal(user, "approve")}
+                              className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Approve ${user.first_name} ${user.last_name}`}
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actionUserId === user.user_id}
+                              onClick={() => openConfirmModal(user, "reject")}
+                              className="rounded-lg bg-rose-500 p-2 text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Reject ${user.first_name} ${user.last_name}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -265,6 +328,38 @@ function VerifyUser() {
             </tbody>
           </table>
         </div>
+        {!loading && !error && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Page {pagination.currentPage} of {pagination.totalPages} ·{" "}
+              {pagination.totalItems} users
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(current - 1, 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) =>
+                    Math.min(current + 1, pagination.totalPages),
+                  )
+                }
+                disabled={page >= pagination.totalPages}
+                className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {confirmAction && (
@@ -290,6 +385,8 @@ function VerifyUser() {
               >
                 {confirmAction.action === "approve" ? (
                   <Check className="h-5 w-5" />
+                ) : confirmAction.action === "restore" ? (
+                  <RotateCcw className="h-5 w-5" />
                 ) : (
                   <X className="h-5 w-5" />
                 )}

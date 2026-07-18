@@ -11,14 +11,18 @@ const authConfig = () => {
   };
 };
 
-// ดึงรายชื่อผู้ใช้ที่ยังรอ Admin อนุมัติ
-export const getPendingUsers = async (email = "") => {
+// ดึงรายชื่อผู้ใช้ที่รออนุมัติหรือถูกปฏิเสธ พร้อมตัวกรองและ pagination
+export const getPendingUsers = async ({
+  email = "",
+  status = "all",
+  page = 1,
+  limit = 10,
+} = {}) => {
   const config = authConfig();
   const keyword = email.trim();
 
-  if (keyword) {
-    config.params = { email: keyword };
-  }
+  config.params = { status, page, limit };
+  if (keyword) config.params.email = keyword;
 
   const response = await loginClient.get("/user/admin/pending", config);
   return response.data;
@@ -38,6 +42,16 @@ export const approveUser = async (userId) => {
 export const rejectUser = async (userId) => {
   const response = await loginClient.patch(
     `/user/admin/reject/${userId}`,
+    null,
+    authConfig()
+  );
+  return response.data;
+};
+
+// ยกเลิกการปฏิเสธและคืนผู้ใช้กลับเป็นสถานะรออนุมัติ
+export const undoRejectUser = async (userId) => {
+  const response = await loginClient.patch(
+    `/user/admin/undo-reject/${userId}`,
     null,
     authConfig()
   );
