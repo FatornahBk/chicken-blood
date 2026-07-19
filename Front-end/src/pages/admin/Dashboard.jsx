@@ -53,7 +53,14 @@ function PredictionStatusChart({ completed, pending }) {
   );
   const totalPercent = completedPercent + pendingPercent;
   const completedShare =
-    totalPercent > 0 ? (completedPercent / totalPercent) * 100 : 50;
+    totalPercent > 0 ? (completedPercent / totalPercent) * 100 : 0;
+  const chartBackground =
+    totalPercent > 0
+      ? `conic-gradient(
+          #4ade80 0% ${completedShare}%,
+          #fb923c ${completedShare}% 100%
+        )`
+      : "#e2e8f0";
 
   return (
     <div
@@ -68,10 +75,7 @@ function PredictionStatusChart({ completed, pending }) {
       <div
         className="relative mx-auto aspect-square w-full max-w-64 rounded-full"
         style={{
-          background: `conic-gradient(
-            #4ade80 0% ${completedShare}%,
-            #fb923c ${completedShare}% 100%
-          )`,
+          background: chartBackground,
         }}
         role="img"
       >
@@ -106,29 +110,23 @@ function AdminDashboard() {
     (async () => {
       try {
         const data = await getDashboardUsers({ page: 1, limit: 3 });
-        const userStatistics = data.user_statistics ?? {};
-        const predictionStatistics = data.prediction_statistics ?? {};
-        const bloodInsights = data.avian_blood_insights ?? {};
         const pendingUsers = data.pending_users_table?.data ?? [];
         if (!mounted) return;
         setStats({
-          totalUsers: Number(userStatistics.total_users ?? 0),
-          pendingVerification: Number(
-            userStatistics.unverified_users ??
-              data.pending_users_table?.meta?.total_items ??
-              0,
-          ),
-          predictionJobs: Number(bloodInsights.total_batches ?? 0),
-          datasetImages: Number(predictionStatistics.total_images ?? 0),
+          totalUsers: Number(data.total_users ?? 0),
+          pendingVerification: Number(data.pending_verification ?? 0),
+          predictionJobs: Number(data.prediction_jobs ?? 0),
+          datasetImages: Number(data.dataset_images ?? 0),
         });
         setPredictionStatuses({
           completed: Number(
-            predictionStatistics.completed_percentage ?? 0,
+            data.prediction_status?.completed_percentage ?? 0,
           ),
-          pending: Number(predictionStatistics.pending_percentage ?? 0),
+          pending: Number(data.prediction_status?.pending_percentage ?? 0),
         });
         setQueue(
-          [...pendingUsers]
+          pendingUsers
+            .filter((user) => Number(user.is_verified) === 0)
             .sort((a, b) => new Date(submittedAt(b)) - new Date(submittedAt(a)))
             .slice(0, 3),
         );
@@ -167,10 +165,7 @@ function AdminDashboard() {
               <div>
                 <p className="text-lg font-medium text-slate-500">{label}</p>
                 <p className={`mt-3 text-3xl font-bold ${color}`}>
-                  {loading &&
-                  (key === "totalUsers" || key === "pendingVerification")
-                    ? "..."
-                    : stats[key]}
+                  {loading ? "..." : stats[key]}
                 </p>
               </div>
               <span className={`rounded-lg p-2.5 ${bg} ${color}`}>
