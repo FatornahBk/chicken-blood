@@ -1,150 +1,185 @@
-import { useMemo, useState } from "react";
-import { Trash2, Database, Search, Eye } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  Eye,
+  LoaderCircle,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  deleteDatasetById,
+  getAllDatasets,
+} from "../../services/admin/DataManagement";
+import { formatAdminDate } from "../../utils/adminDate";
 
-const datasets = [
-  {
-    name: "Wright stain training set",
-    stain: "Wright",
-    images: "4,820",
-    status: "Pending",
-    created: "May 16, 2026",
-    email: "user1@example.com",
-  },
-  {
-    name: "Giemsa stain validation set",
-    stain: "Giemsa",
-    images: "2,940",
-    status: "Complete",
-    created: "May 15, 2026",
-    email: "user1@example.com",
-  },
-  {
-    name: "Manual review samples",
-    stain: "Wright",
-    images: "368",
-    status: "Pending",
-    created: "Today",
-    email: "user1@example.com",
-  },
-];
-
-const statusClass = {
-  Complete: "bg-emerald-50 text-emerald-700",
-  Pending: "bg-amber-50 text-amber-700",
+const emptyStatistics = {
+  total_images: 0,
+  total_batches: 0,
+  total_wright: 0,
+  total_giemsa: 0,
 };
 
-const parseImageCount = (images) =>
-  Number(String(images).replace(/,/g, "")) || 0;
+const getId = (item) =>
+  item.batch_id ?? item.dataset_id ?? item.id ?? item.data_id;
+
+const getName = (item) =>
+  item.batch_name ??
+  item.dataset_name ??
+  item.title ??
+  item.name ??
+  `Dataset #${getId(item) ?? "-"}`;
+
+const getEmail = (item) =>
+  item.email ?? item.user_email ?? item.uploader_email ?? "-";
+
+const getStain = (item) =>
+  item.stain_type ?? item.stainType ?? item.stain ?? "-";
+
+const getImageCount = (item) =>
+  item.total_images ??
+  item.image_count ??
+  item.images_count ??
+  item.number_of_images ??
+  (Array.isArray(item.images) ? item.images.length : 0);
+
+const getStatus = (item) =>
+  item.status ?? item.prediction_status ?? item.predict_status ?? "pending";
+
+const getCreatedAt = (item) =>
+  item.created_at ?? item.createdAt ?? item.uploaded_at ?? item.date;
+
+const statusStyle = (status) => {
+  const normalized = String(status).toLowerCase();
+  return ["complete", "completed", "predicted", "success"].includes(normalized)
+    ? "bg-emerald-50 text-emerald-700"
+    : "bg-amber-50 text-amber-700";
+};
 
 function AdminDataManagement() {
-  const [datasetList, setDatasetList] = useState(datasets);
+  const navigate = useNavigate();
+  const [datasets, setDatasets] = useState([]);
+  const [statistics, setStatistics] = useState(emptyStatistics);
+  const [meta, setMeta] = useState({
+    total_items: 0,
+    current_page: 1,
+    per_page: 10,
+    total_pages: 0,
+  });
   const [search, setSearch] = useState("");
-  const [, setSelectedDataset] = useState(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
-  const filteredDatasets = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
+  const loadDatasets = useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-    return datasetList.filter((dataset) => {
-      const matchesSearch =
-        !keyword ||
-        dataset.name.toLowerCase().includes(keyword) ||
-        dataset.email.toLowerCase().includes(keyword);
-      return matchesSearch;
-    });
-  }, [datasetList, search]);
+    try {
+      const data = await getAllDatasets({
+        page,
+        limit: 10,
+        email: search,
+      });
+      setDatasets(Array.isArray(data?.table_data) ? data.table_data : []);
+      setStatistics({ ...emptyStatistics, ...data?.statistics });
+      setMeta((current) => ({ ...current, ...data?.meta }));
+    } catch (err) {
+      setError(err.response?.data?.message ?? "ไม่สามารถดึงข้อมูลชุดข้อมูลได้");
+      setDatasets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search]);
 
-  const summary = useMemo(() => {
-    const totalImages = datasetList.reduce(
-      (total, dataset) => total + parseImageCount(dataset.images),
-      0,
-    );
-    const wrightImages = datasetList
-      .filter((dataset) => dataset.stain.toLowerCase() === "wright")
-      .reduce((total, dataset) => total + parseImageCount(dataset.images), 0);
-    const giemsaImages = datasetList
-      .filter((dataset) => dataset.stain.toLowerCase() === "giemsa")
-      .reduce((total, dataset) => total + parseImageCount(dataset.images), 0);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(loadDatasets, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadDatasets]);
 
-    return {
-      totalImages: totalImages.toLocaleString(),
-      datasets: datasetList.length,
-      wrightImages: wrightImages.toLocaleString(),
-      giemsaImages: giemsaImages.toLocaleString(),
-    };
-  }, [datasetList]);
+  const handleDelete = async (item) => {
+    const id = getId(item);
+    if (id === undefined || id === null) {
+      setError("ไม่พบ ID ของชุดข้อมูล");
+      return;
+    }
 
-  const deleteDataset = (datasetName) => {
-    const confirmed = window.confirm("Delete this dataset?");
+    if (!window.confirm(`Delete "${getName(item)}"?`)) return;
 
-    if (!confirmed) return;
-
-    setDatasetList((currentDatasets) =>
-      currentDatasets.filter((dataset) => dataset.name !== datasetName),
-    );
-    setSelectedDataset((currentDataset) =>
-      currentDataset?.name === datasetName ? null : currentDataset,
-    );
+    setDeletingId(id);
+    setError("");
+    try {
+      await deleteDatasetById(id);
+      if (datasets.length === 1 && page > 1) {
+        setPage((current) => current - 1);
+      } else {
+        await loadDatasets();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message ?? "ไม่สามารถลบชุดข้อมูลได้");
+    } finally {
+      setDeletingId(null);
+    }
   };
+
+  const totalPages = Number(meta.total_pages) || 0;
+  const currentPage = Number(meta.current_page) || page;
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="mt-1 text-3xl font-bold text-slate-950">
-            Data Management
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Organize datasets, uploaded images, stains, and review samples.
-          </p>
-        </div>
+      <div>
+        <h1 className="mt-1 text-3xl font-bold text-slate-950">
+          Data Management
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Organize uploaded datasets and inspect prediction results.
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-lg font-medium text-slate-500">Total Images</p>
-          <p className="mt-3 text-3xl font-bold text-slate-950">
-            {summary.totalImages}
-          </p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-lg font-medium text-slate-500">Datasets</p>
-          <p className="mt-3 text-3xl font-bold text-blue-600">
-            {summary.datasets}
-          </p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-lg font-medium text-slate-500">Wright Stain</p>
-          <p className="mt-3 text-3xl font-bold text-amber-600">
-            {summary.wrightImages}
-          </p>
-        </article>
-        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Giemsa Stain</p>
-          <p className="mt-3 text-3xl font-bold text-violet-600">
-            {summary.giemsaImages}
-          </p>
-        </article>
+      {error && (
+        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Total Images", statistics.total_images, "text-slate-950"],
+          ["Datasets", statistics.total_batches, "text-blue-600"],
+          ["Wright Stain", statistics.total_wright, "text-amber-600"],
+          ["Giemsa Stain", statistics.total_giemsa, "text-violet-600"],
+        ].map(([label, value, color]) => (
+          <article key={label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-lg font-medium text-slate-500">{label}</p>
+            <p className={`mt-3 text-3xl font-bold ${color}`}>
+              {Number(value || 0).toLocaleString()}
+            </p>
+          </article>
+        ))}
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Database className="h-5 w-5 text-blue-600" aria-hidden="true" />
             <h2 className="text-lg font-bold text-slate-950">Datasets</h2>
           </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-              <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
-              <input
-                type="search"
-                placeholder="Search dataset"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
-              />
-            </div>
-          </div>
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-100">
+            <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Search by email"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              className="w-56 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            />
+          </label>
         </div>
 
         <div className="overflow-x-auto">
@@ -160,83 +195,99 @@ function AdminDataManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredDatasets.length === 0 && (
+              {loading && (
                 <tr>
-                  <td
-                    colSpan="6"
-                    className="px-6 py-10 text-center text-slate-500"
-                  >
+                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
+                    <LoaderCircle className="mx-auto mb-2 h-6 w-6 animate-spin text-blue-600" />
+                    Loading datasets...
+                  </td>
+                </tr>
+              )}
+              {!loading && datasets.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
                     ไม่พบข้อมูล dataset
                   </td>
                 </tr>
               )}
-
-              {filteredDatasets.map((dataset) => (
-                <tr key={dataset.name}>
-                  <td className="px-6 py-4">
-                    {/* <p><FileImage className="h-4 w-4" aria-hidden="true" /></p> */}
-                    {/* <div className="flex items-center gap-3"> */}
-                    {/* <span className="rounded-lg bg-blue-50 p-2 text-blue-600">
-                        <FileImage className="h-4 w-4" aria-hidden="true" />
-                      </span> */}
-                    <p className="font-semibold text-slate-950">
-                      {dataset.name}
-                    </p>
-                    <p className="hidden text-slate-500 sm:block">
-                      {dataset.email}
-                    </p>
-                    {/* </div> */}
-                  </td>
-                  <td className="px-6 py-4 text-slate-700">{dataset.stain}</td>
-                  <td className="px-6 py-4 font-medium text-slate-800">
-                    {dataset.images}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass[dataset.status]}`}
-                    >
-                      {dataset.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {dataset.created}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDataset(dataset)}
-                        className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                        aria-label={`View ${dataset.name}`}
-                      >
-                        <Eye className="h-4 w-4" aria-hidden="true" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteDataset(dataset.name)}
-                        className="rounded-lg border border-rose-200 p-2 text-rose-500 transition-colors hover:bg-rose-50"
-                        aria-label={`Delete ${dataset.name}`}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </td>
-                  {/* <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900">
-                        <Edit3 className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                      <button className="rounded-lg border border-rose-200 p-2 text-rose-500 transition-colors hover:bg-rose-50">
-                        <Ban className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </td> */}
-                </tr>
-              ))}
+              {!loading && datasets.map((item, index) => {
+                const id = getId(item);
+                const status = getStatus(item);
+                return (
+                  <tr key={id ?? `${getName(item)}-${index}`} className="hover:bg-slate-50/70">
+                    <td className="px-6 py-4">
+                      <p className="font-semibold text-slate-950">{getName(item)}</p>
+                      <p className="text-slate-500">{getEmail(item)}</p>
+                    </td>
+                    <td className="px-6 py-4 capitalize text-slate-700">{getStain(item)}</td>
+                    <td className="px-6 py-4 font-medium text-slate-800">
+                      {Number(getImageCount(item) || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusStyle(status)}`}>
+                        {status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-slate-500">{formatAdminDate(getCreatedAt(item))}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/admin/data-management/${id}`)}
+                          disabled={id === undefined || id === null}
+                          className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`View ${getName(item)}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item)}
+                          disabled={deletingId === id}
+                          className="rounded-lg border border-rose-200 p-2 text-rose-500 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50"
+                          aria-label={`Delete ${getName(item)}`}
+                        >
+                          {deletingId === id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
+        {!loading && Number(meta.total_items) > 0 && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
+              Total {Number(meta.total_items).toLocaleString()} datasets
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                disabled={currentPage <= 1}
+                className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="px-2 text-sm font-medium text-slate-600">
+                Page {currentPage} of {Math.max(totalPages, 1)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((value) => value + 1)}
+                disabled={currentPage >= totalPages}
+                className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </section>
   );

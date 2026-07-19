@@ -12,6 +12,7 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUserManagement from "./pages/admin/UserManagement";
 import AdminVerifyUser from "./pages/admin/VerifyUser";
 import AdminDataManagement from "./pages/admin/DataManagement";
+import AdminDataManagementDetail from "./pages/admin/DataManagementDetail";
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("access_token");
@@ -72,6 +73,10 @@ function App() {
           <Route path="users-management" element={<AdminUserManagement />} />
           <Route path="verify-users" element={<AdminVerifyUser />} />
           <Route path="data-management" element={<AdminDataManagement />} />
+          <Route
+            path="data-management/:id"
+            element={<AdminDataManagementDetail />}
+          />
         </Route>
       </Routes>
     </BrowserRouter>
