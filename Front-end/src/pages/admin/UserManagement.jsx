@@ -111,7 +111,12 @@ function AdminUserManagement() {
           page: currentPage,
           limit,
         });
-        setUsers(normalizeUsers(data));
+        setUsers(
+          [...normalizeUsers(data)].sort(
+            (firstUser, secondUser) =>
+              Number(firstUser.user_id) - Number(secondUser.user_id),
+          ),
+        );
         setApiSummary(normalizeSummary(data));
         setMeta((current) => ({ ...current, ...data?.meta }));
       } catch (err) {
@@ -435,10 +440,10 @@ function AdminUserManagement() {
                                 ? openActivateModal(user)
                                 : openSuspendModal(user)
                             }
-                            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            className={`inline-flex items-center gap-2 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                               isSuspended
-                                ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50"
-                                : "border-rose-200 text-rose-500 hover:bg-rose-50"
+                                ? "border-emerald-200 px-3 py-2 text-emerald-600 hover:bg-emerald-50"
+                                : "border-rose-200 p-2 text-rose-500 hover:bg-rose-50"
                             }`}
                             aria-label={
                               isSuspended
@@ -455,10 +460,7 @@ function AdminUserManagement() {
                                 Reactivate
                               </>
                             ) : (
-                              <>
-                                <Ban className="h-4 w-4" aria-hidden="true" />
-                                Suspend
-                              </>
+                              <Ban className="h-4 w-4" aria-hidden="true" />
                             )}
                           </button>
                         </div>
